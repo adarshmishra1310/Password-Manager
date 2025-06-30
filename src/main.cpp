@@ -1,4 +1,5 @@
 // To execute, Run: cl /EHsc /std:c++17 src\\sha256.cpp src\\base64.cpp src\\main.cpp /Fe:password_manager.exe
+// then run password_manager.exe
 
 #include <iostream>
 #include <vector>
