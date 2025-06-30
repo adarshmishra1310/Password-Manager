@@ -50,7 +50,7 @@ password_manager.exe
 
 # License
 
-
+MIT License (see [LICENSE](LICENSE))
 
 
 
