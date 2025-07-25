@@ -9,25 +9,23 @@
 #include <array>
 #include <tuple>
 #include <algorithm>
-#include <limits>
 #include <random>
-#include <stdexcept>
-#include <cstdio> // for freopen
+#include <cstdio>
 
 #ifdef _WIN32
-#include <conio.h>   // _getch() for hidden input(using *)
-#define NOMINMAX     // prevent windows.h from defining min/max macros
-#include <windows.h> // Console API
+#include <conio.h>
+#define NOMINMAX
+#include <windows.h>
 #endif
 
 #include "sha256.h"
 #include "base64.h"
 
-using byte32 = std::array<uint8_t, 32>;
+using namespace std;
+using byte32 = array<uint8_t, 32>;
 
 #ifdef _WIN32
-// Opens a new console window and redirects std streams
-void open_new_console()
+void open_terminal()
 {
     FreeConsole();
     if (AllocConsole())
@@ -35,34 +33,31 @@ void open_new_console()
         freopen("CONIN$", "r", stdin);
         freopen("CONOUT$", "w", stdout);
         freopen("CONOUT$", "w", stderr);
-        SetConsoleTitleA("🔐 Password Manager");
-        // Print heading banner
-        std::cout << "#################################################################################################" << std::endl;
-        std::cout << "#                                                                                               #" << std::endl;
-        std::cout << "#                                    PASSWORD MANAGER                                           #" << std::endl;
-        std::cout << "#                                                                                               #" << std::endl;
-        std::cout << "#################################################################################################" << std::endl;
-
+        SetConsoleTitleA("Password Manager");
+        cout << "#################################################################################################" << endl;
+        cout << "#                                                                                               #" << endl;
+        cout << "#                                    PASSWORD MANAGER                                           #" << endl;
+        cout << "#                                                                                               #" << endl;
+        cout << "#################################################################################################" << endl;
     }
 }
 #endif
 
-// One-time RNG seeded once
-static std::mt19937_64 rng{std::random_device{}()};
+static mt19937_64 rng{random_device{}()};
 
-std::string generate_password(
+string generate_password(
     size_t length,
     bool use_lower = true,
     bool use_upper = true,
     bool use_digits = true,
     bool use_symbols = false)
 {
-    static const std::string lower = "abcdefghijklmnopqrstuvwxyz";
-    static const std::string upper = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
-    static const std::string digits = "0123456789";
-    static const std::string symbols = "!@#$%^&*()-_=+[]{}|;:,.<>/?";
+    static const string lower = "abcdefghijklmnopqrstuvwxyz";
+    static const string upper = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+    static const string digits = "0123456789";
+    static const string symbols = "!@#$%^&*()-_=+[]{}|;:,.<>/?";
 
-    std::string alphabet;
+    string alphabet;
     if (use_lower)
         alphabet += lower;
     if (use_upper)
@@ -72,223 +67,215 @@ std::string generate_password(
     if (use_symbols)
         alphabet += symbols;
     if (alphabet.empty())
-        throw std::runtime_error("No character sets selected");
+        throw runtime_error("No character sets selected");
 
-    std::uniform_int_distribution<size_t> dist(0, alphabet.size() - 1);
-    std::string pwd;
+    uniform_int_distribution<size_t> dist(0, alphabet.size() - 1);
+    string pwd;
     pwd.reserve(length);
     while (pwd.size() < length)
-    {
         pwd += alphabet[dist(rng)];
-    }
     return pwd;
 }
 
-std::string get_hidden_input()
+string get_hidden_input()
 {
-    std::string input;
+    string input;
 #ifdef _WIN32
     char ch;
+    // _getch() is used to take hiddent input in windows(_getch is a part of conio.h)
     while ((ch = _getch()) != '\r')
     {
+        // For backspace
         if (ch == '\b' && !input.empty())
         {
             input.pop_back();
-            std::cout << "\b \b";
+            cout << "\b \b";
         }
+        // If valid character is entered then do this
         else if (ch >= 32 && ch <= 126)
         {
             input.push_back(ch);
-            std::cout << '*';
+            cout << '*';
         }
     }
-    std::cout << '\n';
+    cout << '\n';
 #else
-    termios oldt, newt;
-    tcgetattr(STDIN_FILENO, &oldt);
-    newt = oldt;
-    newt.c_lflag &= ~(ECHO);
-    tcsetattr(STDIN_FILENO, TCSANOW, &newt);
-    std::getline(std::cin, input);
-    tcsetattr(STDIN_FILENO, TCSANOW, &oldt);
+// Can use termios for linux for getting hidden input
+    cin>>input;
 #endif
     return input;
 }
 
-byte32 sha256_digest(const std::string &in)
+byte32 sha256_digest(const string &in)
 {
     SHA256_CTX ctx;
     sha256_init(&ctx);
-    sha256_update(&ctx,
-                  reinterpret_cast<const uint8_t *>(in.data()),
-                  in.size());
+    sha256_update(&ctx, (uint8_t *)in.data(), in.size());
     byte32 out;
     sha256_final(&ctx, out.data());
     return out;
 }
 
-std::string xor_crypt(const std::string &data, const byte32 &key)
+string xor_crypt(const string &data, const byte32 &key)
 {
-    std::string out = data;
+    string out = data;
     for (size_t i = 0; i < data.size(); ++i)
         out[i] = data[i] ^ key[i % key.size()];
     return out;
 }
 
-bool file_exists(const std::string &path)
+bool file_exists(const string &path)
 {
-    std::ifstream f(path);
+    ifstream f(path);
     return f.good();
 }
 
 int main()
 {
 #ifdef _WIN32
-    open_new_console();
+    open_terminal();
 #endif
 
-    const std::string HASH_FILE = "master.hash";
-    const std::string VAULT_FILE = "vault.dat";
+    const string masterHash = "master.hash";
+    const string passVault = "vault.dat";
 
-    std::cout << "Enter master password: ";
-    std::string master = get_hidden_input();
+    cout << "Enter master password: ";
+    string master = get_hidden_input();
     byte32 key = sha256_digest(master);
 
-    if (file_exists(HASH_FILE))
+    if (file_exists(masterHash))
     {
-        std::ifstream hin(HASH_FILE);
-        std::string stored_b64;
-        std::getline(hin, stored_b64);
-        std::string stored_raw = base64_decode(stored_b64);
+        ifstream hin(masterHash);
+        string stored_b64;
+        getline(hin, stored_b64);
+        string stored_raw = base64_decode(stored_b64);
         if (stored_raw.size() != key.size() ||
-            !std::equal(stored_raw.begin(), stored_raw.end(),
-                        reinterpret_cast<const char *>(key.data())))
+            !equal(stored_raw.begin(), stored_raw.end(),
+                   reinterpret_cast<const char *>(key.data())))
         {
-            std::cerr << "ERROR: Wrong master password.\n";
+            cerr << "ERROR: Wrong master password.\n";
             return 1;
         }
     }
     else
     {
-        std::cout << "No master set; create one.\nConfirm: ";
-        std::string confirm = get_hidden_input();
+        cout << "No master set; create one.\nConfirm: ";
+        string confirm = get_hidden_input();
         if (confirm != master)
         {
-            std::cerr << "ERROR: passwords did not match.\n";
+            cerr << "ERROR: passwords did not match.\n";
             return 1;
         }
-        std::ofstream hout(HASH_FILE, std::ios::trunc);
+        ofstream hout(masterHash, ios::trunc);
         hout << base64_encode(
-            std::string(reinterpret_cast<char *>(key.data()), key.size()));
-        std::cout << "Master password saved.\n";
+            string(reinterpret_cast<char *>(key.data()), key.size()));
+        cout << "Master password saved.\n";
     }
 
-    std::vector<std::tuple<std::string, std::string>> entries;
-    if (file_exists(VAULT_FILE))
+    vector<tuple<string, string>> entries;
+    if (file_exists(passVault))
     {
-        std::ifstream fin(VAULT_FILE);
-        std::string b64;
+        ifstream fin(passVault);
+        string b64;
         fin >> b64;
-        std::string blob = xor_crypt(base64_decode(b64), key);
-        std::istringstream iss(blob);
-        std::string line;
-        while (std::getline(iss, line))
+        string blob = xor_crypt(base64_decode(b64), key);
+        istringstream iss(blob);
+        string line;
+        while (getline(iss, line))
         {
             auto p1 = line.find(':'), p2 = line.find_last_of(':');
-            if (p1 != std::string::npos && p2 > p1)
-            {
+            if (p1 != string::npos && p2 > p1)
                 entries.emplace_back(
                     line.substr(0, p1),
                     line.substr(p1 + 1, p2 - p1 - 1) + ':' + line.substr(p2 + 1));
-            }
         }
     }
 
     while (true)
     {
-        std::cout << "\n[A]dd [G]et [D]el [L]ist [Q]uit: ";
+        cout << "\n[A]dd [G]et [D]el [L]ist [Q]uit: ";
         char cmd;
-        std::cin >> cmd;
-        std::cin.ignore(std::numeric_limits<std::streamsize>::max(), '\n');
+        cin >> cmd;
+        cin.ignore(numeric_limits<streamsize>::max(), '\n');
 
         if (cmd == 'Q' || cmd == 'q')
             break;
         if (cmd == 'A' || cmd == 'a')
         {
-            std::string svc, user;
-            std::cout << "Service: ";
-            std::getline(std::cin, svc);
-            std::cout << "User:    ";
-            std::getline(std::cin, user);
+            string svc, user;
+            cout << "Service: ";
+            getline(cin, svc);
+            cout << "User:    ";
+            getline(cin, user);
 
-            std::cout << "Generate a random password? (y/N) ";
-            std::string line;
-            std::getline(std::cin, line);
+            cout << "Generate a random password? (y/N) ";
+            string line;
+            getline(cin, line);
             char choice = line.empty() ? 'n' : line[0];
 
-            std::string pass;
+            string pass;
             if (choice == 'y' || choice == 'Y')
             {
-                std::cout << "  Length? ";
+                cout << "  Length? ";
                 size_t len;
-                std::cin >> len;
-                std::cin.ignore(std::numeric_limits<std::streamsize>::max(), '\n');
+                cin >> len;
+                cin.ignore(numeric_limits<streamsize>::max(), '\n');
                 pass = generate_password(len);
-                std::cout << "  Generated: " << pass << "\n";
+                cout << "  Generated: " << pass << "\n";
             }
             else
             {
-                std::cout << "Pass:    ";
+                cout << "Pass:    ";
                 pass = get_hidden_input();
             }
             entries.emplace_back(svc, user + ':' + pass);
-            std::cout << "Entry added.\n";
+            cout << "Entry added.\n";
         }
         else if (cmd == 'G' || cmd == 'g')
         {
-            std::cout << "Service: ";
-            std::string svc;
-            std::getline(std::cin, svc);
+            cout << "Service: ";
+            string svc;
+            getline(cin, svc);
             bool found = false;
             for (auto &t : entries)
             {
-                if (std::get<0>(t) == svc)
+                if (get<0>(t) == svc)
                 {
-                    auto up = std::get<1>(t);
+                    auto up = get<1>(t);
                     auto pos = up.find(':');
-                    std::cout << "User: " << up.substr(0, pos)
-                              << ", Pass: " << up.substr(pos + 1) << '\n';
+                    cout << "User: " << up.substr(0, pos)
+                         << ", Pass: " << up.substr(pos + 1) << '\n';
                     found = true;
                     break;
                 }
             }
             if (!found)
-                std::cout << "<not found>\n";
+                cout << "<not found>\n";
         }
         else if (cmd == 'D' || cmd == 'd')
         {
-            std::cout << "Service: ";
-            std::string svc;
-            std::getline(std::cin, svc);
+            cout << "Service: ";
+            string svc;
+            getline(cin, svc);
             entries.erase(
-                std::remove_if(entries.begin(), entries.end(),
-                               [&](auto &t)
-                               { return std::get<0>(t) == svc; }),
+                remove_if(entries.begin(), entries.end(),
+                          [&](auto &t)
+                          { return get<0>(t) == svc; }),
                 entries.end());
         }
         else if (cmd == 'L' || cmd == 'l')
         {
             for (auto &t : entries)
-                std::cout << " - " << std::get<0>(t) << "\n";
+                cout << " - " << get<0>(t) << "\n";
         }
     }
 
-    std::ostringstream oss;
+    ostringstream oss;
     for (auto &t : entries)
-        oss << std::get<0>(t) << ':' << std::get<1>(t) << '\n';
-    std::ofstream fout(VAULT_FILE, std::ios::trunc);
+        oss << get<0>(t) << ':' << get<1>(t) << '\n';
+    ofstream fout(passVault, ios::trunc);
     fout << base64_encode(xor_crypt(oss.str(), key));
 
-    std::cout << "Vault saved. Goodbye!\n";
+    cout << "Vault saved. Goodbye!\n";
     return 0;
 }
